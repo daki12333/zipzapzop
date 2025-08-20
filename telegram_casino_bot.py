@@ -1,4 +1,5 @@
 import json
+import traceback
 import asyncio
 import random
 import logging
@@ -352,7 +353,7 @@ Pozdrav {username}!
 *Svi poeni su virtuelni i služe samo za zabavu!*
         """
 
-        await update.message.reply_text(welcome_text, parse_mode='Markdown')
+        await update.message.reply_text(welcome_text)
     except Exception as e:
         logger.error(f"Error in start_command: {e}")
         await update.message.reply_text("❌ Došlo je do greške. Molimo pokušajte ponovo.")
@@ -374,7 +375,7 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"🎲 Ukupno uloženo: {total_wagered:,} RSD\n"
             f"🏆 Ukupno dobijeno: {total_won:,} RSD\n"
             f"📈 Neto: {total_won - total_wagered:+,} RSD", 
-            parse_mode='Markdown'
+
         )
     except Exception as e:
         logger.error(f"Error in balance_command: {e}")
@@ -401,7 +402,7 @@ async def work_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 f"Možete ponovo raditi za:\n"
                 f"📅 {days} dana, {hours} sati i {minutes} minuta\n\n"
                 f"💼 Povratak rada: {next_work_time.strftime('%d.%m.%Y %H:%M')}",
-                parse_mode='Markdown'
+
             )
             return
 
@@ -421,7 +422,7 @@ async def work_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             f"💰 Zaradili ste: +{work_amount} RSD\n"
             f"💳 Novi balans: {new_balance:,} RSD\n\n"
             f"⏰ Sledeći rad za 3 dana!",
-            parse_mode='Markdown'
+
         )
 
     except Exception as e:
@@ -783,7 +784,7 @@ Minimalni ulog: 10 RSD"""
         await update.message.reply_text(
             f"🎰 **RULET** 🎰\n\n💰 Ulog: {bet:,} RSD\n\nIzaberite vašu opciju:",
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+
         )
     except Exception as e:
         logger.error(f"Error in roulette_game: {e}")
@@ -920,7 +921,7 @@ async def roulette_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 💳 Novi balans: {new_balance:,} RSD
         """
 
-        await query.edit_message_text(final_text, parse_mode='Markdown')
+        await query.edit_message_text(final_text)
     except Exception as e:
         logger.error(f"Error in roulette_callback: {e}")
         if update.callback_query:
@@ -1033,7 +1034,7 @@ Primer: /dice 1000 1 3 6
 💳 Novi balans: {new_balance:,} RSD
         """
 
-        await message.edit_text(final_text, parse_mode='Markdown')
+        await message.edit_text(final_text)
     except Exception as e:
         logger.error(f"Error in dice_game: {e}")
         await update.message.reply_text("❌ Došlo je do greške. Molimo pokušajte ponovo.")
@@ -1134,7 +1135,7 @@ ili: /flip 1000 tails
 💳 Novi balans: {new_balance:,} RSD
         """
 
-        await message.edit_text(final_text, parse_mode='Markdown')
+        await message.edit_text(final_text)
     except Exception as e:
         logger.error(f"Error in coinflip_game: {e}")
         await update.message.reply_text("❌ Došlo je do greške. Molimo pokušajte ponovo.")
@@ -1170,7 +1171,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             f"👥 Ukupno korisnika: {len(all_users)}\n"
             f"✅ Poslato: 0\n"
             f"❌ Neuspešno: 0",
-            parse_mode='Markdown'
+
         )
 
         for i, user_id in enumerate(all_users):
@@ -1178,7 +1179,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 await context.bot.send_message(
                     user_id,
                     f"📢 **OBAVEŠTENJE**\n\n{message_text}",
-                    parse_mode='Markdown'
+
                 )
                 success_count += 1
 
@@ -1190,7 +1191,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                         f"✅ Poslato: {success_count}\n"
                         f"❌ Neuspešno: {failed_count}\n"
                         f"⏳ Obrađeno: {i + 1}/{len(all_users)}",
-                        parse_mode='Markdown'
+
                     )
 
                 # Kratka pauza između poruka
@@ -1207,7 +1208,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             f"✅ Uspešno poslato: {success_count}\n"
             f"❌ Neuspešno: {failed_count}\n\n"
             f"📝 Poruka: {message_text[:100]}{'...' if len(message_text) > 100 else ''}",
-            parse_mode='Markdown'
+
         )
 
         # Sačuvaj broadcast u istoriju
@@ -1262,7 +1263,7 @@ async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"💰 Stari balans: {old_balance:,} RSD\n"
             f"➕ Dodano: {amount:+,} RSD\n"
             f"💳 Novi balans: {new_balance:,} RSD",
-            parse_mode='Markdown'
+
         )
     except Exception as e:
         logger.error(f"Error in add_balance_command: {e}")
@@ -1300,7 +1301,7 @@ async def remove_balance_command(update: Update, context: ContextTypes.DEFAULT_T
             f"💰 Stari balans: {old_balance:,} RSD\n"
             f"➖ Oduzeto: {amount:,} RSD\n"
             f"💳 Novi balans: {new_balance:,} RSD",
-            parse_mode='Markdown'
+
         )
     except Exception as e:
         logger.error(f"Error in remove_balance_command: {e}")
@@ -1349,7 +1350,7 @@ async def house_balance_command(update: Update, context: ContextTypes.DEFAULT_TY
             f"🎰 **Rigging statistike:**\n"
             f"⚙️ Poslednje 50 igara: {rigged_count}/50 rigged\n"
             f"📋 Ukupno igara: {total_games}",
-            parse_mode='Markdown'
+
         )
     except Exception as e:
         logger.error(f"Error in house_balance_command: {e}")
@@ -1417,7 +1418,7 @@ async def cashout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 f"💰 Iznos: {amount:,} RSD\n"
                 f"🆔 Request ID: {request_id}\n\n"
                 f"Koristite /cashouts za upravljanje zahtevima.",
-                parse_mode='Markdown'
+
             )
         except Exception as e:
             logger.error(f"Failed to notify admin about cashout: {e}")
@@ -1428,7 +1429,7 @@ async def cashout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             f"🆔 Request ID: {request_id}\n\n"
             f"Sredstva su rezervisana i biće isplaćena nakon odobravanja.\n"
             f"Dobićete kod za preuzimanje kada admin odobri zahtev.",
-            parse_mode='Markdown'
+
         )
     except Exception as e:
         logger.error(f"Error in cashout_command: {e}")
@@ -1466,7 +1467,7 @@ async def cashouts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.message.reply_text(
             "💸 **PENDING CASHOUT ZAHTEVI**\n\nKliknite na zahtev da ga odobrite:",
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+
         )
     except Exception as e:
         logger.error(f"Error in cashouts_command: {e}")
@@ -1511,7 +1512,7 @@ async def approve_cashout_callback(update: Update, context: ContextTypes.DEFAULT
                 f"💰 Iznos: {request_data['amount']:,} RSD\n"
                 f"🔐 Kod: **{cashout_code}**\n\n"
                 f"Kontaktirajte support sa ovim kodom za preuzimanje sredstava.",
-                parse_mode='Markdown'
+
             )
 
             await query.edit_message_text(
@@ -1519,7 +1520,7 @@ async def approve_cashout_callback(update: Update, context: ContextTypes.DEFAULT
                 f"👤 Korisnik: {request_data.get('username', 'Unknown')}\n"
                 f"💰 Iznos: {request_data.get('amount', 0):,} RSD\n"
                 f"🔐 Kod poslat korisniku: {cashout_code}",
-                parse_mode='Markdown'
+
             )
 
         except Exception as e:
@@ -1581,7 +1582,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 **📏 Minimalni ulog:** 10 RSD na sve igre
         """
 
-        # Admin komande (samo za admina)
         if user_id == ADMIN_ID:
             help_text += """
 **🔧 Admin komande:**
@@ -1596,13 +1596,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             """
 
         help_text += f"""
-**🎲 Rigging Info:**
-• Rigging verovatnoća: {RIGGING_PROBABILITY*100}%
-• House edge: {HOUSE_EDGE*100}%
-• Svi poeni su virtuelni i služe samo za zabavu!
+**
         """
 
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await update.message.reply_text(help_text)
     except Exception as e:
         logger.error(f"Error in help_command: {e}")
         await update.message.reply_text("❌ Došlo je do greške. Molimo pokušajte ponovo.")
@@ -1655,7 +1652,7 @@ async def add_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             f"💰 Iznos: {promo['amount']:,} RSD\n"
             f"♾️ Upotreba: {promo['uses']}/{promo['max_uses']}\n"
             f"⏰ Ističe: {expires_dt}",
-            parse_mode='Markdown'
+
         )
     except Exception as e:
         logger.error(f"Error in add_promo_command: {e}")
@@ -1677,7 +1674,7 @@ async def disable_promo_command(update: Update, context: ContextTypes.DEFAULT_TY
         if ok and promo:
             await update.message.reply_text(
                 f"✅ {message}\n🎟️ Kod: {promo['code']}\n💰 Iznos: {promo['amount']:,} RSD\n♾️ Upotreba: {promo['uses']}/{promo['max_uses']}",
-                parse_mode='Markdown'
+
             )
         else:
             await update.message.reply_text(message)
@@ -1744,16 +1741,35 @@ async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT
 
 # ERROR HANDLER
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Rukuje greškama"""
+    """Rukuje greškama i šalje detalje adminu"""
     logger.error(f"Update {update} caused error {context.error}")
 
+    # Pošalji generičnu poruku korisniku
     try:
         if update and update.effective_message:
             await update.effective_message.reply_text(
                 "❌ Došlo je do greške. Molimo pokušajte ponovo."
             )
     except Exception as e:
-        logger.error(f"Error in error_handler: {e}")
+        logger.error(f"Error in error_handler (user notify): {e}")
+
+    # Pošalji detalje adminu
+    try:
+        err = context.error
+        tb = "".join(traceback.format_exception(type(err), err, err.__traceback__)) if err else ""
+        user_line = ""
+        if update and update.effective_user:
+            user_line = f"Korisnik: @{getattr(update.effective_user, 'username', None)} (ID: {update.effective_user.id})\n"
+
+        text = (
+            "⚠️ GREŠKA U BOTU\n\n" +
+            user_line +
+            f"Greška: {err}\n\n" +
+            "Traceback:\n" + tb[-3500:]
+        )
+        await context.bot.send_message(ADMIN_ID, text)
+    except Exception as e:
+        logger.error(f"Error in error_handler (admin notify): {e}")
 
 def main():
     """Glavna funkcija za pokretanje bota"""
