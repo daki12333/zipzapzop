@@ -1592,6 +1592,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 📡 /broadcast <poruka> - Pošalji poruku svim korisnicima
 🎁 /addpromo <kod> <iznos> <max_uses> <dani> - Napravi promo kod
 ⛔ /disablepromo <kod> - Deaktiviraj promo kod
+📃 /promos - Lista svih promo kodova
             """
 
         help_text += f"""
@@ -1684,6 +1685,53 @@ async def disable_promo_command(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Error in disable_promo_command: {e}")
         await update.message.reply_text("❌ Došlo je do greške pri deaktivaciji promo koda.")
 
+# ADMIN: /promos - lista svih promo kodova
+async def list_promos_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if update.effective_user.id != ADMIN_ID:
+            await update.message.reply_text("❌ Nemate dozvolu za ovu komandu!")
+            return
+
+        promos = casino.data.get("promos", {})
+        if not promos:
+            await update.message.reply_text("ℹ️ Trenutno nema promo kodova.")
+            return
+
+        # Sortiraj po datumu kreiranja (noviji prvi)
+        promo_list = list(promos.values())
+        try:
+            promo_list.sort(key=lambda p: p.get("created_at", ""), reverse=True)
+        except Exception:
+            pass
+
+        lines = ["🎟️ Promo kodovi:\n"]
+        now = datetime.now()
+        for p in promo_list:
+            code = p.get("code", "?")
+            amount = int(p.get("amount", 0))
+            uses = int(p.get("uses", 0))
+            max_uses = int(p.get("max_uses", 0))
+            active = p.get("active", True)
+            exp_str = p.get("expires_at") or "?"
+            expired = False
+            try:
+                expired = datetime.fromisoformat(exp_str) < now
+            except Exception:
+                expired = False
+            status = "AKTIVAN" if active and not expired else ("ISTEKAO" if expired else "NEAKTIVAN")
+            lines.append(
+                f"• {code} — {amount:,} RSD — {uses}/{max_uses} — {status} — ističe: {exp_str}"
+            )
+
+        text = "\n".join(lines)
+        # Ako poruka prelazi limit, pošalji u delovima ~3500 char po delu
+        chunk_size = 3500
+        for i in range(0, len(text), chunk_size):
+            await update.message.reply_text(text[i:i+chunk_size])
+    except Exception as e:
+        logger.error(f"Error in list_promos_command: {e}")
+        await update.message.reply_text("❌ Došlo je do greške pri listanju promo kodova.")
+
 # BROADCAST MESSAGE HANDLER (za odgovor na broadcast)
 async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Rukuje porukama koje nisu komande (za broadcast odgovor)"""
@@ -1733,6 +1781,7 @@ def main():
         application.add_handler(CommandHandler("broadcast", broadcast_command))
         application.add_handler(CommandHandler("addpromo", add_promo_command))
         application.add_handler(CommandHandler("disablepromo", disable_promo_command))
+        application.add_handler(CommandHandler("promos", list_promos_command))
 
         # Cashout sistem
         application.add_handler(CommandHandler("cashout", cashout_command))
