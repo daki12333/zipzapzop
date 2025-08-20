@@ -1557,52 +1557,47 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         user_id = update.effective_user.id
 
-        help_text = f"""
-🎰 **CASINO BOT - KOMANDE** 🎰
+        lines = []
+        lines.append("CASINO BOT - KOMANDE")
+        lines.append("")
+        lines.append("Igre (House Edge: 7%):")
+        lines.append("/play <ulog> - Blackjack")
+        lines.append("/roulette <ulog> - Rulet (zatim izaberi opciju)")
+        lines.append("/dice <ulog> <brojevi> - Dice (1-3 broja od 1-6)")
+        lines.append("/flip <ulog> <heads/tails> - Coinflip")
+        lines.append("")
+        lines.append("Balans:")
+        lines.append("/bal - Proveri balans i statistike")
+        lines.append("/work - Radi za 30 RSD (svaka 3 dana)")
+        lines.append("/cashout <iznos> - Zatraži isplatu (min. 1,000 RSD)")
+        lines.append("")
+        lines.append("Promo:")
+        lines.append("/promo <kod> - Iskoristi promo kod")
+        lines.append("")
+        lines.append("Ostalo:")
+        lines.append("/start - Početna poruka")
+        lines.append("/help - Ova poruka")
+        lines.append("")
+        lines.append("Minimalni ulog: 10 RSD na sve igre")
 
-**🎮 Igre (House Edge: 7%):**
-🃏 /play <ulog> - Blackjack
-🎰 /roulette <ulog> - Rulet (zatim izaberi opciju)
-🎲 /dice <ulog> <brojevi> - Dice (1-3 broja od 1-6)
-🪙 /flip <ulog> <heads/tails> - Coinflip
-
-**💰 Balans:**
-💳 /bal - Proveri balans i statistike
-💼 /work - Radi za 30 RSD (svaka 3 dana)
-💸 /cashout <iznos> - Zatraži isplatu (min. 1,000 RSD)
-
-**🎁 Promo:**
-🎟️ /promo <kod> - Iskoristi promo kod
-
-**ℹ️ Ostalo:**
-🏠 /start - Početna poruka
-❓ /help - Ova poruka
-
-**📏 Minimalni ulog:** 10 RSD na sve igre
-        """
-
-        # Admin komande (samo za admina)
         if user_id == ADMIN_ID:
-            help_text += """
-**🔧 Admin komande:**
-➕ /add <user_id> <iznos> - Dodaj balans
-➖ /remove <user_id> <iznos> - Oduzmi balans  
-🏦 /house - House balans i detaljne statistike
-💸 /cashouts - Upravljanje cashout zahtevima
-📡 /broadcast <poruka> - Pošalji poruku svim korisnicima
-🎁 /addpromo <kod> <iznos> <max_uses> <dani> - Napravi promo kod
-⛔ /disablepromo <kod> - Deaktiviraj promo kod
-📃 /promos - Lista svih promo kodova
-            """
+            lines.append("")
+            lines.append("Admin komande:")
+            lines.append("/add <user_id> <iznos> - Dodaj balans")
+            lines.append("/remove <user_id> <iznos> - Oduzmi balans")
+            lines.append("/house - House balans i detaljne statistike")
+            lines.append("/cashouts - Upravljanje cashout zahtevima")
+            lines.append("/broadcast <poruka> - Pošalji poruku svim korisnicima")
+            lines.append("/addpromo <kod> <iznos> <max_uses> <dani> - Napravi promo kod")
+            lines.append("/disablepromo <kod> - Deaktiviraj promo kod")
+            lines.append("/promos - Lista svih promo kodova")
 
-        help_text += f"""
-**🎲 Rigging Info:**
-• Rigging verovatnoća: {RIGGING_PROBABILITY*100}%
-• House edge: {HOUSE_EDGE*100}%
-• Svi poeni su virtuelni i služe samo za zabavu!
-        """
+        lines.append("")
+        lines.append(f"Rigging verovatnoća: {RIGGING_PROBABILITY*100}%")
+        lines.append(f"House edge: {HOUSE_EDGE*100}%")
+        lines.append("Svi poeni su virtuelni i služe samo za zabavu!")
 
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await update.message.reply_text("\n".join(lines))
     except Exception as e:
         logger.error(f"Error in help_command: {e}")
         await update.message.reply_text("❌ Došlo je do greške. Molimo pokušajte ponovo.")
