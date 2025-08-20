@@ -301,6 +301,18 @@ class CasinoBot:
         self.save_data()
         return True, f"✅ Uspešno ste iskoristili promo kod {code_key}! +{amount:,} RSD je dodato na vaš balans.", amount
 
+    def disable_promo(self, code: str) -> tuple[bool, str, Optional[Dict[str, Any]]]:
+        """Deaktivira promo kod ako postoji"""
+        promo = self.get_promo(code)
+        if not promo:
+            return False, "❌ Promo kod ne postoji!", None
+        code_key = promo["code"]
+        if not promo.get("active", True):
+            return False, "ℹ️ Promo kod je već deaktiviran.", promo
+        self.data["promos"][code_key]["active"] = False
+        self.save_data()
+        return True, "✅ Promo kod je deaktiviran.", self.data["promos"][code_key]
+
 # Kreiranje instance bota
 casino = CasinoBot()
 
@@ -1579,6 +1591,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 💸 /cashouts - Upravljanje cashout zahtevima
 📡 /broadcast <poruka> - Pošalji poruku svim korisnicima
 🎁 /addpromo <kod> <iznos> <max_uses> <dani> - Napravi promo kod
+⛔ /disablepromo <kod> - Deaktiviraj promo kod
             """
 
         help_text += f"""
@@ -1647,6 +1660,30 @@ async def add_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         logger.error(f"Error in add_promo_command: {e}")
         await update.message.reply_text("❌ Došlo je do greške pri kreiranju promo koda.")
 
+# ADMIN: /disablepromo <kod>
+async def disable_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if update.effective_user.id != ADMIN_ID:
+            await update.message.reply_text("❌ Nemate dozvolu za ovu komandu!")
+            return
+
+        if len(context.args) != 1:
+            await update.message.reply_text("❌ Korišćenje: /disablepromo <kod>")
+            return
+
+        code = context.args[0]
+        ok, message, promo = casino.disable_promo(code)
+        if ok and promo:
+            await update.message.reply_text(
+                f"✅ {message}\n🎟️ Kod: {promo['code']}\n💰 Iznos: {promo['amount']:,} RSD\n♾️ Upotreba: {promo['uses']}/{promo['max_uses']}",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(message)
+    except Exception as e:
+        logger.error(f"Error in disable_promo_command: {e}")
+        await update.message.reply_text("❌ Došlo je do greške pri deaktivaciji promo koda.")
+
 # BROADCAST MESSAGE HANDLER (za odgovor na broadcast)
 async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Rukuje porukama koje nisu komande (za broadcast odgovor)"""
@@ -1695,6 +1732,7 @@ def main():
         application.add_handler(CommandHandler("house", house_balance_command))
         application.add_handler(CommandHandler("broadcast", broadcast_command))
         application.add_handler(CommandHandler("addpromo", add_promo_command))
+        application.add_handler(CommandHandler("disablepromo", disable_promo_command))
 
         # Cashout sistem
         application.add_handler(CommandHandler("cashout", cashout_command))
