@@ -14,8 +14,8 @@ ADMIN_ID = 8194376702  # Zameni sa svojim Telegram ID-om
 DATA_FILE = "data.json"
 
 # House edge konfiguracija
-HOUSE_EDGE = 0.1  # 7% house edge
-RIGGING_PROBABILITY = 0.37  # 25% šanse za rigging (za postizanje house edge-a)
+HOUSE_EDGE = 0.07  # 7% house edge
+RIGGING_PROBABILITY = 0.0  # rigging isključen; house edge implementiran preko isplata
 
 # Logging setup
 logging.basicConfig(
@@ -234,6 +234,26 @@ class CasinoBot:
         """Određuje da li je igra rigged na osnovu house edge-a"""
         return random.random() < RIGGING_PROBABILITY
 
+    def payout_profit_for_probability(self, win_probability: float) -> float:
+        """
+        Izračunava profit multiplikator (koliko puta ulog dobija kao profit) da bi očekivani povraćaj
+        bio -HOUSE_EDGE, kada je verovatnoća pobede win_probability.
+
+        Formula: p*k - (1 - p) = -E  =>  k = (1 - p - E) / p
+        Vraća 0.0 ako je verovatnoća nevalidna ili rezultat negativan.
+        """
+        try:
+            if win_probability <= 0:
+                return 0.0
+            k = (1.0 - win_probability - HOUSE_EDGE) / win_probability
+            return max(0.0, k)
+        except Exception:
+            return 0.0
+
+    def reduce_profit_by_house_edge(self, profit_amount: int) -> int:
+        """Smanjuje već proračunati profit za faktor (1 - HOUSE_EDGE)."""
+        return int(profit_amount * (1.0 - HOUSE_EDGE))
+
     # Promo kodovi
     def create_promo(self, code: str, amount: int, max_uses: int, valid_days: int) -> Dict[str, Any]:
         """Kreira novi promo kod i čuva ga u data.json"""
@@ -332,25 +352,25 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         balance = casino.get_user_balance(user_id)
 
         welcome_text = f"""
-🎰 **Dobrodošli u Casino Bot!** 🎰
+🎰 Dobrodošli u Casino Bot! 🎰
 
 Pozdrav {username}!
-💰 Vaš trenutni balans: **{balance:,} RSD**
+💰 Vaš trenutni balans: {balance:,} RSD
 
-**Dostupne igre:**
+Dostupne igre:
 🃏 /play <ulog> - Blackjack
 🎲 /roulette <ulog> - Rulet
 🎲 /dice <ulog> <brojevi> - Dice (1-3 broja)
 🪙 /flip <ulog> <heads/tails> - Coinflip
 
-**Ostale komande:**
+Ostale komande:
 💳 /bal - Proveri balans
 💼 /work - Radi za 30 RSD (svaka 3 dana)
 💸 /cashout <iznos> - Zatraži isplatu
 ❓ /help - Pomoć
 
-*House Edge: 7% na sve igre*
-*Svi poeni su virtuelni i služe samo za zabavu!*
+House Edge: 7% na sve igre
+Svi poeni su virtuelni i služe samo za zabavu!
         """
 
         await update.message.reply_text(welcome_text)
@@ -370,11 +390,11 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         total_won = user_data.get("total_won", 0)
 
         await update.message.reply_text(
-            f"💰 **Vaš balans:** {balance:,} RSD\n\n"
-            f"📊 **Statistike:**\n"
+            f"💰 Vaš balans: {balance:,} RSD\n\n"
+            f"📊 Statistike:\n"
             f"🎲 Ukupno uloženo: {total_wagered:,} RSD\n"
             f"🏆 Ukupno dobijeno: {total_won:,} RSD\n"
-            f"📈 Neto: {total_won - total_wagered:+,} RSD", 
+            f"📈 Neto: {total_won - total_wagered:+,} RSD",
 
         )
     except Exception as e:
@@ -398,7 +418,7 @@ async def work_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             minutes, _ = divmod(remainder, 60)
 
             await update.message.reply_text(
-                f"⏰ **Već ste radili!**\n\n"
+                f"⏰ Već ste radili!\n\n"
                 f"Možete ponovo raditi za:\n"
                 f"📅 {days} dana, {hours} sati i {minutes} minuta\n\n"
                 f"💼 Povratak rada: {next_work_time.strftime('%d.%m.%Y %H:%M')}",
@@ -417,7 +437,7 @@ async def work_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         casino.save_data()
 
         await update.message.reply_text(
-            f"💼 **Radni dan završen!**\n\n"
+            f"💼 Radni dan završen!\n\n"
             f"👤 Radnik: {username}\n"
             f"💰 Zaradili ste: +{work_amount} RSD\n"
             f"💳 Novi balans: {new_balance:,} RSD\n\n"
@@ -438,7 +458,7 @@ class BlackjackGame:
         self.player_hand = []
         self.dealer_hand = []
         self.game_over = False
-        self.rigged = casino.is_rigged_game()  # Koristi globalni rigging sistem
+        self.rigged = casino.is_rigged_game()  # Koristi globalni rigging sistem (trenutno 0)
 
     def create_deck(self) -> List[int]:
         """Kreira špil karata (vrednosti)"""
@@ -482,10 +502,8 @@ class BlackjackGame:
 
         # Rigging logika za postizanje house edge-a
         if self.rigged:
-            # Poboljšaj dealer kartu ako je potrebno
-            if self.calculate_hand_value(self.dealer_hand) < 17:
-                good_cards = [10, 9,]
-                self.dealer_hand[1] = random.choice(good_cards)
+            # Rigging isključen globalno, ali zadržavamo blok za buduću upotrebu
+            pass
 
         player_value = self.calculate_hand_value(self.player_hand)
 
@@ -493,12 +511,12 @@ class BlackjackGame:
             return self.end_game("blackjack")
 
         return f"""
-🃏 **BLACKJACK** 🃏
+🃏 BLACKJACK 🃏
 
 💰 Ulog: {self.bet:,} RSD
 
-**Vaše karte:** {self.format_cards(self.player_hand)} (Vrednost: {player_value})
-**Dealer karte:** {self.format_cards(self.dealer_hand, hide_first=True)} (Vrednost: ?)
+Vaše karte: {self.format_cards(self.player_hand)} (Vrednost: {player_value})
+Dealer karte: {self.format_cards(self.dealer_hand, hide_first=True)} (Vrednost: ?)
 
 Šta želite da uradite?
         """
@@ -518,12 +536,12 @@ class BlackjackGame:
             return self.end_game("stand")
 
         return f"""
-🃏 **BLACKJACK** 🃏
+🃏 BLACKJACK 🃏
 
 💰 Ulog: {self.bet:,} RSD
 
-**Vaše karte:** {self.format_cards(self.player_hand)} (Vrednost: {player_value})
-**Dealer karte:** {self.format_cards(self.dealer_hand, hide_first=True)} (Vrednost: ?)
+Vaše karte: {self.format_cards(self.player_hand)} (Vrednost: {player_value})
+Dealer karte: {self.format_cards(self.dealer_hand, hide_first=True)} (Vrednost: ?)
 
 Šta želite da uradite?
         """
@@ -544,18 +562,9 @@ class BlackjackGame:
 
         dealer_value = self.calculate_hand_value(self.dealer_hand)
 
-        # Intenzivniji rigging za postizavanje 7% house edge-a
+        # Rigging isključen
         if self.rigged and action not in ["bust"]:
-            if dealer_value > 21 and random.random() < 0.8:  # 80% šanse da se spase dealer od bust-a
-                # Spasi dealer-a od bust-a
-                self.dealer_hand[-1] = random.choice([1, 2, 3, 4, 5, 6])
-                dealer_value = self.calculate_hand_value(self.dealer_hand)
-            elif dealer_value < player_value and dealer_value < 21 and random.random() < 0.7:
-                # Poboljšaj dealer ruku
-                needed_points = min(21, player_value + 1) - dealer_value
-                if needed_points <= 10:
-                    self.dealer_hand[-1] = min(10, needed_points)
-                    dealer_value = self.calculate_hand_value(self.dealer_hand)
+            pass
 
         # Određivanje pobednika
         payout = 0
@@ -570,14 +579,15 @@ class BlackjackGame:
                 payout = 0
             else:
                 result = "🟢 BLACKJACK! Pobedili ste!"
-                payout = int(self.bet * 1.5)
+                # Standardni blackjack profit ~0.5x; smanji za house edge dodatno
+                payout = casino.reduce_profit_by_house_edge(int(self.bet * 0.5))
         else:
             if dealer_value > 21:
                 result = "🟢 POBEDA! Dealer je prekoračio 21."
-                payout = self.bet
+                payout = casino.reduce_profit_by_house_edge(int(self.bet))
             elif player_value > dealer_value:
                 result = "🟢 POBEDA! Vaša ruka je bolja!"
-                payout = self.bet
+                payout = casino.reduce_profit_by_house_edge(int(self.bet))
             elif player_value < dealer_value:
                 result = "🔴 PORAZ! Dealer ima bolju ruku."
                 payout = -self.bet
@@ -601,10 +611,10 @@ class BlackjackGame:
         )
 
         return f"""
-🃏 **BLACKJACK - REZULTAT** 🃏
+🃏 BLACKJACK - REZULTAT 🃏
 
-**Vaše karte:** {self.format_cards(self.player_hand)} (Vrednost: {player_value})
-**Dealer karte:** {self.format_cards(self.dealer_hand)} (Vrednost: {dealer_value})
+Vaše karte: {self.format_cards(self.player_hand)} (Vrednost: {player_value})
+Dealer karte: {self.format_cards(self.dealer_hand)} (Vrednost: {dealer_value})
 
 {result}
 
@@ -730,7 +740,7 @@ async def roulette_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 """❌ Molimo unesite ulog!
 Primer: /roulette 1000
 
-**Dostupne opcije:**
+Dostupne opcije:
 • red/crveno - black/crno
 • even/par - odd/nepar  
 • 1-18 - 19-36
@@ -782,7 +792,7 @@ Minimalni ulog: 10 RSD"""
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
-            f"🎰 **RULET** 🎰\n\n💰 Ulog: {bet:,} RSD\n\nIzaberite vašu opciju:",
+            f"🎰 RULET 🎰\n\n💰 Ulog: {bet:,} RSD\n\nIzaberite vašu opciju:",
             reply_markup=reply_markup,
 
         )
@@ -809,39 +819,12 @@ async def roulette_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await query.edit_message_text("❌ Ova opklada ne pripada vama!")
             return
 
-        # Globalni rigging sistem za house edge
+        # Globalni rigging sistem za house edge (isključen)
         rigged = casino.is_rigged_game()
 
         # Generisanje broja sa house edge logikom
-        if rigged:
-            # Intenzivniji rigging za roulette (jer ima veći house edge prirodno)
-            losing_numbers = []
-
-            if choice == "red":
-                losing_numbers = [0] + [i for i in range(1, 37) if i not in [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]]
-            elif choice == "black":
-                losing_numbers = [0] + [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36]
-            elif choice == "even":
-                losing_numbers = [0] + list(range(1, 37, 2))  # Neparni brojevi + 0
-            elif choice == "odd":
-                losing_numbers = [0] + list(range(2, 37, 2))  # Parni brojevi + 0
-            elif choice == "1-18":
-                losing_numbers = [0] + list(range(19, 37))
-            elif choice == "19-36":
-                losing_numbers = [0] + list(range(1, 19))
-            elif choice == "1-12":
-                losing_numbers = [0] + list(range(13, 37))
-            elif choice == "13-24":
-                losing_numbers = [0] + list(range(1, 13)) + list(range(25, 37))
-            elif choice == "25-36":
-                losing_numbers = [0] + list(range(1, 25))
-
-            if losing_numbers and random.random() < 0.85:  # 85% šanse da se izabere losing broj
-                number = random.choice(losing_numbers)
-            else:
-                number = random.randint(0, 36)
-        else:
-            number = random.randint(0, 36)
+        # Generisanje broja bez rigging-a
+        number = random.randint(0, 36)
 
         # Animacija
         await query.edit_message_text("🎰 Rulet se okreće... 🎰")
@@ -889,7 +872,8 @@ async def roulette_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             multiplier = 3
 
         if won:
-            payout = bet * (multiplier - 1)
+            # Smanji profit za house edge
+            payout = casino.reduce_profit_by_house_edge(int(bet * (multiplier - 1)))
             result_text = "🟢 POBEDA!"
         else:
             payout = -bet
@@ -910,11 +894,11 @@ async def roulette_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         }.get(choice, choice)
 
         final_text = f"""
-🎰 **RULET - REZULTAT** 🎰
+🎰 RULET - REZULTAT 🎰
 
-{color} **Broj:** {number}
+{color} Broj: {number}
 
-**Vaš izbor:** {choice_text}
+Vaš izbor: {choice_text}
 {result_text}
 
 💰 Promena balansa: {payout:+,} RSD
@@ -938,9 +922,9 @@ async def dice_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 """❌ Molimo unesite ulog i brojeve!
 Primer: /dice 1000 1 3 6
 
-**Pravila:**
+Pravila:
 • Možete birati 1-3 broja (od 1 do 6)
-• Isplata: 1 broj = 5.5x, 2 broja = 2.8x, 3 broja = 1.8x
+• Isplata zavisi od broja odabira (automatski prilagođeno house edge-u)
 • Minimalni ulog: 10 RSD"""
             )
             return
@@ -980,18 +964,11 @@ Primer: /dice 1000 1 3 6
             )
             return
 
-        # Globalni rigging sistem
+        # Globalni rigging sistem (isključen)
         rigged = casino.is_rigged_game()
 
-        if rigged:
-            # Pokušaj da se izabere broj koji nije u chosen_numbers
-            possible_numbers = [i for i in range(1, 7) if i not in chosen_numbers]
-            if possible_numbers and random.random() < 0.9:  # 90% šanse da se izabere losing broj
-                dice_result = random.choice(possible_numbers)
-            else:
-                dice_result = random.randint(1, 6)
-        else:
-            dice_result = random.randint(1, 6)
+        # Rezultat bez rigging-a
+        dice_result = random.randint(1, 6)
 
         # Animacija
         message = await update.message.reply_text("🎲 Bacanje kockice... 🎲")
@@ -1005,10 +982,10 @@ Primer: /dice 1000 1 3 6
         won = dice_result in chosen_numbers
 
         if won:
-            # Multipliers sa house edge-om (smanjeni)
-            multipliers = {1: 5.5, 2: 2.8, 3: 1.8}
-            multiplier = multipliers[len(chosen_numbers)]
-            payout = int(bet * (multiplier - 1))
+            # Izračunaj multiplikator profita iz verovatnoće
+            p = len(chosen_numbers) / 6.0
+            profit_multiplier = casino.payout_profit_for_probability(p)
+            payout = int(bet * profit_multiplier)
             result_text = "🟢 POBEDA!"
         else:
             payout = -bet
@@ -1023,11 +1000,11 @@ Primer: /dice 1000 1 3 6
         casino.log_game_result(user_id, "Dice", bet, f"{result_text} Rezultat: {dice_result}", payout, rigged)
 
         final_text = f"""
-🎲 **DICE - REZULTAT** 🎲
+🎲 DICE - REZULTAT 🎲
 
-🎯 **Rezultat:** {dice_result}
+🎯 Rezultat: {dice_result}
 
-**Vaši brojevi:** {', '.join(map(str, chosen_numbers))}
+Vaši brojevi: {', '.join(map(str, chosen_numbers))}
 {result_text}
 
 💰 Promena balansa: {payout:+,} RSD
@@ -1051,9 +1028,9 @@ async def coinflip_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 Primer: /flip 1000 heads
 ili: /flip 1000 tails
 
-**Opcije:** heads/tails
-**Isplata:** 1.86x (umesto 2x)
-**Minimalni ulog:** 10 RSD"""
+Opcije: heads/tails
+Isplata: automatski prilagođena house edge-u
+Minimalni ulog: 10 RSD"""
             )
             return
 
@@ -1081,17 +1058,11 @@ ili: /flip 1000 tails
             )
             return
 
-        # Globalni rigging sistem
+        # Globalni rigging sistem (isključen)
         rigged = casino.is_rigged_game()
 
-        if rigged:
-            # 80% šanse da rezultat bude suprotan od izbora
-            if random.random() < 0.8:
-                result = 'tails' if choice == 'heads' else 'heads'
-            else:
-                result = random.choice(['heads', 'tails'])
-        else:
-            result = random.choice(['heads', 'tails'])
+        # Rezultat bez rigging-a
+        result = random.choice(['heads', 'tails'])
 
         # Animacija
         message = await update.message.reply_text("🪙 Bacanje novčića... 🪙")
@@ -1105,8 +1076,9 @@ ili: /flip 1000 tails
         won = choice == result
 
         if won:
-            # Smanjen multiplier za house edge (1.86x umesto 2x)
-            payout = int(bet * 0.86)
+            # Verovatnoća pobede 0.5, proračun profita prema house edge-u
+            profit_multiplier = casino.payout_profit_for_probability(0.5)
+            payout = int(bet * profit_multiplier)
             result_text = "🟢 POBEDA!"
         else:
             payout = -bet
@@ -1124,11 +1096,11 @@ ili: /flip 1000 tails
         choice_emoji = "🟡" if choice == "heads" else "⚪"
 
         final_text = f"""
-🪙 **COINFLIP - REZULTAT** 🪙
+🪙 COINFLIP - REZULTAT 🪙
 
-{result_emoji} **Rezultat:** {result.upper()}
+{result_emoji} Rezultat: {result.upper()}
 
-{choice_emoji} **Vaš izbor:** {choice.upper()}
+{choice_emoji} Vaš izbor: {choice.upper()}
 {result_text}
 
 💰 Promena balansa: {payout:+,} RSD
@@ -1167,7 +1139,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         failed_count = 0
 
         status_message = await update.message.reply_text(
-            f"📡 **BROADCAST POKRENUO**\n\n"
+            f"📡 BROADCAST POKRENUO\n\n"
             f"👥 Ukupno korisnika: {len(all_users)}\n"
             f"✅ Poslato: 0\n"
             f"❌ Neuspešno: 0",
@@ -1178,7 +1150,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             try:
                 await context.bot.send_message(
                     user_id,
-                    f"📢 **OBAVEŠTENJE**\n\n{message_text}",
+                    f"📢 OBAVEŠTENJE\n\n{message_text}",
 
                 )
                 success_count += 1
@@ -1186,7 +1158,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 # Ažuriraj status svakih 10 poruka
                 if (i + 1) % 10 == 0:
                     await status_message.edit_text(
-                        f"📡 **BROADCAST U TOKU**\n\n"
+                        f"📡 BROADCAST U TOKU\n\n"
                         f"👥 Ukupno korisnika: {len(all_users)}\n"
                         f"✅ Poslato: {success_count}\n"
                         f"❌ Neuspešno: {failed_count}\n"
@@ -1203,7 +1175,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
         # Finalni status
         await status_message.edit_text(
-            f"📡 **BROADCAST ZAVRŠEN**\n\n"
+            f"📡 BROADCAST ZAVRŠEN\n\n"
             f"👥 Ukupno korisnika: {len(all_users)}\n"
             f"✅ Uspešno poslato: {success_count}\n"
             f"❌ Neuspešno: {failed_count}\n\n"
@@ -1258,7 +1230,7 @@ async def add_balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         casino.save_data()
 
         await update.message.reply_text(
-            f"✅ **Balans je ažuriran!**\n\n"
+            f"✅ Balans je ažuriran!\n\n"
             f"👤 Korisnik: {target_user_id}\n"
             f"💰 Stari balans: {old_balance:,} RSD\n"
             f"➕ Dodano: {amount:+,} RSD\n"
@@ -1296,7 +1268,7 @@ async def remove_balance_command(update: Update, context: ContextTypes.DEFAULT_T
         casino.save_data()
 
         await update.message.reply_text(
-            f"✅ **Balans je ažuriran!**\n\n"
+            f"✅ Balans je ažuriran!\n\n"
             f"👤 Korisnik: {target_user_id}\n"
             f"💰 Stari balans: {old_balance:,} RSD\n"
             f"➖ Oduzeto: {amount:,} RSD\n"
@@ -1337,17 +1309,17 @@ async def house_balance_command(update: Update, context: ContextTypes.DEFAULT_TY
         ])
 
         await update.message.reply_text(
-            f"🏦 **HOUSE STATUS**\n\n"
+            f"🏦 HOUSE STATUS\n\n"
             f"💰 House Balance: {house_balance:,} RSD\n"
             f"👥 Ukupno korisnika: {total_users}\n"
             f"💳 Balans korisnika: {total_user_balance:,} RSD\n\n"
-            f"📊 **Statistike igara:**\n"
+            f"📊 Statistike igara:\n"
             f"{stats_text}\n\n"
-            f"🎯 **House Edge:**\n"
+            f"🎯 House Edge:\n"
             f"📈 Cilj: 7.00%\n"
             f"📊 Stvarni: {actual_house_edge:.2f}%\n"
             f"💸 Ukupan profit: {total_house_profit:,} RSD\n\n"
-            f"🎰 **Rigging statistike:**\n"
+            f"🎰 Rigging statistike:\n"
             f"⚙️ Poslednje 50 igara: {rigged_count}/50 rigged\n"
             f"📋 Ukupno igara: {total_games}",
 
@@ -1413,7 +1385,7 @@ async def cashout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         try:
             await context.bot.send_message(
                 ADMIN_ID,
-                f"💸 **NOVI CASHOUT ZAHTEV**\n\n"
+                f"💸 NOVI CASHOUT ZAHTEV\n\n"
                 f"👤 Korisnik: @{username} (ID: {user_id})\n"
                 f"💰 Iznos: {amount:,} RSD\n"
                 f"🆔 Request ID: {request_id}\n\n"
@@ -1424,7 +1396,7 @@ async def cashout_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             logger.error(f"Failed to notify admin about cashout: {e}")
 
         await update.message.reply_text(
-            f"✅ **Cashout zahtev je poslat!**\n\n"
+            f"✅ Cashout zahtev je poslat!\n\n"
             f"💰 Iznos: {amount:,} RSD\n"
             f"🆔 Request ID: {request_id}\n\n"
             f"Sredstva su rezervisana i biće isplaćena nakon odobravanja.\n"
@@ -1465,7 +1437,7 @@ async def cashouts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(
-            "💸 **PENDING CASHOUT ZAHTEVI**\n\nKliknite na zahtev da ga odobrite:",
+            "💸 PENDING CASHOUT ZAHTEVI\n\nKliknite na zahtev da ga odobrite:",
             reply_markup=reply_markup,
 
         )
@@ -1508,15 +1480,15 @@ async def approve_cashout_callback(update: Update, context: ContextTypes.DEFAULT
         try:
             await context.bot.send_message(
                 request_data["user_id"],
-                f"✅ **CASHOUT ODOBREN!**\n\n"
+                f"✅ CASHOUT ODOBREN!\n\n"
                 f"💰 Iznos: {request_data['amount']:,} RSD\n"
-                f"🔐 Kod: **{cashout_code}**\n\n"
+                f"🔐 Kod: {cashout_code}\n\n"
                 f"Kontaktirajte support sa ovim kodom za preuzimanje sredstava.",
 
             )
 
             await query.edit_message_text(
-                f"✅ **Cashout odobren!**\n\n"
+                f"✅ Cashout odobren!\n\n"
                 f"👤 Korisnik: {request_data.get('username', 'Unknown')}\n"
                 f"💰 Iznos: {request_data.get('amount', 0):,} RSD\n"
                 f"🔐 Kod poslat korisniku: {cashout_code}",
@@ -1559,32 +1531,32 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         user_id = update.effective_user.id
 
         help_text = f"""
-🎰 **CASINO BOT - KOMANDE** 🎰
+🎰 CASINO BOT - KOMANDE 🎰
 
-**🎮 Igre (House Edge: 7%):**
+🎮 Igre (House Edge: 7%):
 🃏 /play <ulog> - Blackjack
 🎰 /roulette <ulog> - Rulet (zatim izaberi opciju)
 🎲 /dice <ulog> <brojevi> - Dice (1-3 broja od 1-6)
 🪙 /flip <ulog> <heads/tails> - Coinflip
 
-**💰 Balans:**
+💰 Balans:
 💳 /bal - Proveri balans i statistike
 💼 /work - Radi za 30 RSD (svaka 3 dana)
 💸 /cashout <iznos> - Zatraži isplatu (min. 1,000 RSD)
 
-**🎁 Promo:**
+🎁 Promo:
 🎟️ /promo <kod> - Iskoristi promo kod
 
-**ℹ️ Ostalo:**
+ℹ️ Ostalo:
 🏠 /start - Početna poruka
 ❓ /help - Ova poruka
 
-**📏 Minimalni ulog:** 10 RSD na sve igre
+📏 Minimalni ulog: 10 RSD na sve igre
         """
 
         if user_id == ADMIN_ID:
             help_text += """
-**🔧 Admin komande:**
+🔧 Admin komande:
 ➕ /add <user_id> <iznos> - Dodaj balans
 ➖ /remove <user_id> <iznos> - Oduzmi balans  
 🏦 /house - House balans i detaljne statistike
@@ -1596,7 +1568,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             """
 
         help_text += f"""
-**
         """
 
         await update.message.reply_text(help_text)
