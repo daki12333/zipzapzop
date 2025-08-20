@@ -49,6 +49,7 @@ class CasinoBot:
             "house_balance": 100000,
             "cashout_requests": {},
             "game_history": [],
+            "promos": {},
             "stats": {
                 "blackjack": {"games": 0, "profit": 0},
                 "roulette": {"games": 0, "profit": 0},
@@ -71,6 +72,8 @@ class CasinoBot:
             data["cashout_requests"] = {}
         if "game_history" not in data:
             data["game_history"] = []
+        if "promos" not in data:
+            data["promos"] = {}
         if "broadcast_history" not in data:
             data["broadcast_history"] = []
         if "work_cooldowns" not in data:
@@ -104,6 +107,8 @@ class CasinoBot:
                 user_data["total_won"] = 0
             if "last_work" not in user_data:
                 user_data["last_work"] = None
+            if "redeemed_codes" not in user_data:
+                user_data["redeemed_codes"] = []
 
     def save_data(self, data: Dict[str, Any] = None) -> None:
         """Čuva podatke u JSON fajl"""
@@ -227,6 +232,86 @@ class CasinoBot:
     def is_rigged_game(self) -> bool:
         """Određuje da li je igra rigged na osnovu house edge-a"""
         return random.random() < RIGGING_PROBABILITY
+
+    # Promo kodovi
+    def create_promo(self, code: str, amount: int, max_uses: int, valid_days: int) -> Dict[str, Any]:
+        """Kreira novi promo kod i čuva ga u data.json"""
+        if not code or amount <= 0 or max_uses <= 0 or valid_days <= 0:
+            raise ValueError("Neispravni parametri za promo kod")
+
+        code_key = code.strip().upper()
+        now = datetime.now()
+        expires_at = (now + timedelta(days=valid_days)).isoformat()
+
+        self.data["promos"][code_key] = {
+            "code": code_key,
+            "amount": int(amount),
+            "max_uses": int(max_uses),
+            "uses": 0,
+            "created_at": now.isoformat(),
+            "expires_at": expires_at,
+            "active": True,
+        }
+        self.save_data()
+        return self.data["promos"][code_key]
+
+    def get_promo(self, code: str) -> Optional[Dict[str, Any]]:
+        if not code:
+            return None
+        return self.data.get("promos", {}).get(code.strip().upper())
+
+    def redeem_promo(self, user_id: int, code: str) -> tuple[bool, str, int]:
+        """Pokušava da iskoristi promo kod za korisnika. Vraća (uspeh, poruka, amount)"""
+        user_key = str(user_id)
+        if user_key not in self.data["users"]:
+            self.get_user_balance(user_id)
+
+        promo = self.get_promo(code)
+        if not promo:
+            return False, "❌ Nevažeći promo kod!", 0
+
+        if not promo.get("active", True):
+            return False, "❌ Ovaj promo kod je deaktiviran!", 0
+
+        try:
+            if promo.get("expires_at"):
+                if datetime.now() > datetime.fromisoformat(promo["expires_at"]):
+                    return False, "⏰ Promo kod je istekao!", 0
+        except Exception:
+            # Ako je datum neispravan, dozvoli iskorišćenje jednokratno
+            pass
+
+        if promo.get("uses", 0) >= promo.get("max_uses", 0):
+            return False, "❌ Iskorišten je maksimalan broj upotreba za ovaj kod!", 0
+
+        # Ograniči na jedno korišćenje po korisniku
+        redeemed = self.data["users"][user_key].get("redeemed_codes", [])
+        code_key = promo["code"]
+        if code_key in redeemed:
+            return False, "❌ Već ste iskoristili ovaj promo kod!", 0
+
+        amount = int(promo.get("amount", 0))
+        if amount <= 0:
+            return False, "❌ Neispravan iznos promo koda!", 0
+
+        # Primeni kod
+        self.update_balance(user_id, amount)
+        self.data["users"][user_key].setdefault("redeemed_codes", []).append(code_key)
+        self.data["promos"][code_key]["uses"] = self.data["promos"][code_key].get("uses", 0) + 1
+        self.save_data()
+        return True, f"✅ Uspešno ste iskoristili promo kod {code_key}! +{amount:,} RSD je dodato na vaš balans.", amount
+
+    def disable_promo(self, code: str) -> tuple[bool, str, Optional[Dict[str, Any]]]:
+        """Deaktivira promo kod ako postoji"""
+        promo = self.get_promo(code)
+        if not promo:
+            return False, "❌ Promo kod ne postoji!", None
+        code_key = promo["code"]
+        if not promo.get("active", True):
+            return False, "ℹ️ Promo kod je već deaktiviran.", promo
+        self.data["promos"][code_key]["active"] = False
+        self.save_data()
+        return True, "✅ Promo kod je deaktiviran.", self.data["promos"][code_key]
 
 # Kreiranje instance bota
 casino = CasinoBot()
@@ -1486,6 +1571,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 💼 /work - Radi za 30 RSD (svaka 3 dana)
 💸 /cashout <iznos> - Zatraži isplatu (min. 1,000 RSD)
 
+**🎁 Promo:**
+🎟️ /promo <kod> - Iskoristi promo kod
+
 **ℹ️ Ostalo:**
 🏠 /start - Početna poruka
 ❓ /help - Ova poruka
@@ -1502,6 +1590,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 🏦 /house - House balans i detaljne statistike
 💸 /cashouts - Upravljanje cashout zahtevima
 📡 /broadcast <poruka> - Pošalji poruku svim korisnicima
+🎁 /addpromo <kod> <iznos> <max_uses> <dani> - Napravi promo kod
+⛔ /disablepromo <kod> - Deaktiviraj promo kod
+📃 /promos - Lista svih promo kodova
             """
 
         help_text += f"""
@@ -1515,6 +1606,131 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except Exception as e:
         logger.error(f"Error in help_command: {e}")
         await update.message.reply_text("❌ Došlo je do greške. Molimo pokušajte ponovo.")
+
+# USER: /promo <kod>
+async def redeem_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if not context.args:
+            await update.message.reply_text("❌ Korišćenje: /promo <kod>")
+            return
+
+        code = context.args[0]
+        user_id = update.effective_user.id
+
+        success, message, _ = casino.redeem_promo(user_id, code)
+        await update.message.reply_text(message)
+    except Exception as e:
+        logger.error(f"Error in redeem_promo_command: {e}")
+        await update.message.reply_text("❌ Došlo je do greške pri korišćenju promo koda.")
+
+# ADMIN: /addpromo <kod> <iznos> <max_uses> <dani>
+async def add_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if update.effective_user.id != ADMIN_ID:
+            await update.message.reply_text("❌ Nemate dozvolu za ovu komandu!")
+            return
+
+        if len(context.args) != 4:
+            await update.message.reply_text(
+                "❌ Korišćenje: /addpromo <kod> <iznos> <max_uses> <dani>\nPrimer: /addpromo WELCOME100 100 50 7"
+            )
+            return
+
+        code = context.args[0].upper()
+        try:
+            amount = int(context.args[1])
+            max_uses = int(context.args[2])
+            days = int(context.args[3])
+        except ValueError:
+            await update.message.reply_text("❌ Iznos, max_uses i dani moraju biti brojevi!")
+            return
+
+        # Ako postoji, pregazi ga novim parametrima
+        promo = casino.create_promo(code, amount, max_uses, days)
+        expires_dt = datetime.fromisoformat(promo["expires_at"]).strftime('%d.%m.%Y %H:%M')
+
+        await update.message.reply_text(
+            f"✅ Promo kod kreiran/izmenjen!\n\n"
+            f"🎟️ Kod: {promo['code']}\n"
+            f"💰 Iznos: {promo['amount']:,} RSD\n"
+            f"♾️ Upotreba: {promo['uses']}/{promo['max_uses']}\n"
+            f"⏰ Ističe: {expires_dt}",
+            parse_mode='Markdown'
+        )
+    except Exception as e:
+        logger.error(f"Error in add_promo_command: {e}")
+        await update.message.reply_text("❌ Došlo je do greške pri kreiranju promo koda.")
+
+# ADMIN: /disablepromo <kod>
+async def disable_promo_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if update.effective_user.id != ADMIN_ID:
+            await update.message.reply_text("❌ Nemate dozvolu za ovu komandu!")
+            return
+
+        if len(context.args) != 1:
+            await update.message.reply_text("❌ Korišćenje: /disablepromo <kod>")
+            return
+
+        code = context.args[0]
+        ok, message, promo = casino.disable_promo(code)
+        if ok and promo:
+            await update.message.reply_text(
+                f"✅ {message}\n🎟️ Kod: {promo['code']}\n💰 Iznos: {promo['amount']:,} RSD\n♾️ Upotreba: {promo['uses']}/{promo['max_uses']}",
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(message)
+    except Exception as e:
+        logger.error(f"Error in disable_promo_command: {e}")
+        await update.message.reply_text("❌ Došlo je do greške pri deaktivaciji promo koda.")
+
+# ADMIN: /promos - lista svih promo kodova
+async def list_promos_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        if update.effective_user.id != ADMIN_ID:
+            await update.message.reply_text("❌ Nemate dozvolu za ovu komandu!")
+            return
+
+        promos = casino.data.get("promos", {})
+        if not promos:
+            await update.message.reply_text("ℹ️ Trenutno nema promo kodova.")
+            return
+
+        # Sortiraj po datumu kreiranja (noviji prvi)
+        promo_list = list(promos.values())
+        try:
+            promo_list.sort(key=lambda p: p.get("created_at", ""), reverse=True)
+        except Exception:
+            pass
+
+        lines = ["🎟️ Promo kodovi:\n"]
+        now = datetime.now()
+        for p in promo_list:
+            code = p.get("code", "?")
+            amount = int(p.get("amount", 0))
+            uses = int(p.get("uses", 0))
+            max_uses = int(p.get("max_uses", 0))
+            active = p.get("active", True)
+            exp_str = p.get("expires_at") or "?"
+            expired = False
+            try:
+                expired = datetime.fromisoformat(exp_str) < now
+            except Exception:
+                expired = False
+            status = "AKTIVAN" if active and not expired else ("ISTEKAO" if expired else "NEAKTIVAN")
+            lines.append(
+                f"• {code} — {amount:,} RSD — {uses}/{max_uses} — {status} — ističe: {exp_str}"
+            )
+
+        text = "\n".join(lines)
+        # Ako poruka prelazi limit, pošalji u delovima ~3500 char po delu
+        chunk_size = 3500
+        for i in range(0, len(text), chunk_size):
+            await update.message.reply_text(text[i:i+chunk_size])
+    except Exception as e:
+        logger.error(f"Error in list_promos_command: {e}")
+        await update.message.reply_text("❌ Došlo je do greške pri listanju promo kodova.")
 
 # BROADCAST MESSAGE HANDLER (za odgovor na broadcast)
 async def handle_broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1550,6 +1766,7 @@ def main():
         application.add_handler(CommandHandler("help", help_command))
         application.add_handler(CommandHandler("bal", balance_command))
         application.add_handler(CommandHandler("work", work_command))
+        application.add_handler(CommandHandler("promo", redeem_promo_command))
 
         # Igre
         application.add_handler(CommandHandler("play", play_blackjack))
@@ -1562,6 +1779,9 @@ def main():
         application.add_handler(CommandHandler("remove", remove_balance_command))
         application.add_handler(CommandHandler("house", house_balance_command))
         application.add_handler(CommandHandler("broadcast", broadcast_command))
+        application.add_handler(CommandHandler("addpromo", add_promo_command))
+        application.add_handler(CommandHandler("disablepromo", disable_promo_command))
+        application.add_handler(CommandHandler("promos", list_promos_command))
 
         # Cashout sistem
         application.add_handler(CommandHandler("cashout", cashout_command))
