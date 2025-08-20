@@ -263,8 +263,7 @@ Pozdrav {username}!
 💸 /cashout <iznos> - Zatraži isplatu
 ❓ /help - Pomoć
 
-*House Edge: 7% na sve igre*
-*Svi poeni su virtuelni i služe samo za zabavu!*
+
         """
 
         await update.message.reply_text(welcome_text, parse_mode='Markdown')
@@ -1505,10 +1504,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             """
 
         help_text += f"""
-**🎲 Rigging Info:**
-• Rigging verovatnoća: {RIGGING_PROBABILITY*100}%
-• House edge: {HOUSE_EDGE*100}%
-• Svi poeni su virtuelni i služe samo za zabavu!
+
         """
 
         await update.message.reply_text(help_text, parse_mode='Markdown')
